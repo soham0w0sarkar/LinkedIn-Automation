@@ -10,9 +10,11 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "bull": "^4.16.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",
-    "puppeteer": "^24.9.0"
+    "puppeteer": "^24.9.0",
+    "redis": "^5.5.6"
   }
 }

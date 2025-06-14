@@ -9,7 +9,7 @@ async function simulateNaturalTyping(page, selector, message) {
   await element.click({ clickCount: 3 });
   await page.keyboard.press("Backspace");
 
-  const wordsPerMinute = 67;
+  const wordsPerMinute = 75;
   const charsPerSecond = (wordsPerMinute * 5) / 60;
   const baseDelay = 1000 / charsPerSecond;
 
@@ -23,7 +23,7 @@ async function simulateNaturalTyping(page, selector, message) {
 
     if (
       charCount > 0 &&
-      charCount % 30 === 0 &&
+      charCount % 10 === 0 &&
       Math.random() < 0.4 &&
       char !== " "
     ) {

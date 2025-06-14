@@ -1,6 +1,7 @@
 import express from "express";
 import puppeteer from "puppeteer";
 import dotenv from "dotenv";
+import Bull from "bull";
 import { handleLinkedInLogin } from "./cookie-utils.js";
 import simulateNaturalTyping from "./typing-util.js";
 
@@ -8,6 +9,23 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+// Create job queue
+const connectionQueue = new Bull("LinkedIn Connection Queue", {
+  redis: {
+    host: process.env.REDIS_HOST || "localhost",
+    port: process.env.REDIS_PORT || 6379,
+  },
+  defaultJobOptions: {
+    removeOnComplete: 10,
+    removeOnFail: 50,
+    attempts: 0,
+    backoff: {
+      type: "exponential",
+      delay: 2000,
+    },
+  },
+});
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -25,12 +43,6 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Set user agent to appear more legitimate
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-
-    // Login to LinkedIn using the helper function
     const loginSuccess = await handleLinkedInLogin(
       page,
       process.env.LINKEDIN_EMAIL,
@@ -43,258 +55,103 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
 
     console.log("✓ Successfully logged in to LinkedIn");
 
-    // Navigate to the target profile
-    await page.goto(profileUrl, { waitUntil: "networkidle0", timeout: 30000 });
+    await page.goto(profileUrl);
     await delay(2000);
 
-    // Wait for profile page to load
     await page.waitForSelector("h1", { timeout: 15000 });
     console.log("✓ Profile page loaded");
 
-    // Extract profile name for logging
-    const profileName = await page
-      .$eval("h1", (el) => el.textContent.trim())
-      .catch(() => "Unknown");
-    console.log(`Profile: ${profileName}`);
-
-    // Look for Connect button with various possible selectors
-    const connectButtonSelectors = [
-      'button[aria-label^="Connect"]',
-      'button[aria-label^="Invite"]',
-      'button:has-text("Connect")',
-      'button[data-control-name="connect"]',
-      '.pvs-profile-actions button:has-text("Connect")',
-      'button[data-ember-action*="connect"]',
-    ];
-
-    let connectButton = null;
-    let connectButtonSelector = null;
-
-    // Try to find the connect button using different selectors
-    for (const selector of connectButtonSelectors) {
-      try {
-        connectButton = await page.$(selector);
-        if (connectButton) {
-          connectButtonSelector = selector;
-          break;
-        }
-      } catch (error) {
-        // Continue trying other selectors
+    const followSpan = await page.$('span ::-p-text("Follow")');
+    if (followSpan) {
+      const moreButton = await page.$('button[aria-label="More actions"]');
+      console.log("✓ Follow button found, clicking More actions");
+      if (moreButton) {
+        await moreButton.click();
+        console.log("✓ More actions button clicked");
+        await delay(30000);
       }
     }
 
-    if (!connectButton) {
-      // Check if already connected
-      const followButton = await page.$('button[aria-label^="Follow"]');
-      const messageButton = await page.$('button[aria-label^="Message"]');
-      const pendingButton = await page.$('button[aria-label^="Pending"]');
-
-      if (messageButton) {
-        throw new Error("Already connected - Message button found");
-      } else if (pendingButton) {
-        throw new Error("Connection request already pending");
-      } else if (followButton) {
-        throw new Error(
-          "Cannot connect - only Follow option available (likely not 1st/2nd degree connection)"
-        );
-      } else {
-        throw new Error(
-          "Connect button not found - profile may not be available for connection"
-        );
-      }
+    const connectSpan = await page.$('span ::-p-text("Connect")');
+    if (!connectSpan) {
+      throw new Error(
+        "Connect button not found - user may already be connected or profile not accessible"
+      );
     }
 
-    console.log(
-      `✓ Found Connect button using selector: ${connectButtonSelector}`
+    const clicked = await page.evaluate((el) => {
+      const button = el.closest("button");
+      if (button) {
+        button.click();
+        return true;
+      }
+      return false;
+    }, connectSpan);
+
+    if (!clicked) {
+      throw new Error("Failed to click Connect button");
+    }
+
+    await delay(2000);
+
+    const addNoteButton = await page.waitForSelector(
+      'button[aria-label="Add a note"]',
+      { timeout: 10000, visible: true }
     );
 
-    // Click the Connect button
-    await connectButton.click();
-    console.log("✓ Clicked Connect button");
+    if (addNoteButton) {
+      await addNoteButton.click();
+      console.log("✓ Add note button clicked");
+      await delay(1000);
 
-    // Wait for modal to appear
-    await delay(1500);
-
-    // Look for "Add a note" button or text area
-    let addNoteButton = null;
-    let noteTextArea = null;
-
-    try {
-      // Try to find "Add a note" button first
-      const addNoteSelectors = [
-        'button[aria-label^="Add a note"]',
-        'button:has-text("Add a note")',
-        'button[data-control-name="add_note"]',
-        ".send-invite__add-note-button",
-      ];
-
-      for (const selector of addNoteSelectors) {
-        try {
-          addNoteButton = await page.$(selector);
-          if (addNoteButton) break;
-        } catch (error) {
-          // Continue trying
-        }
-      }
-
-      if (addNoteButton) {
-        console.log("✓ Found 'Add a note' button");
-        await addNoteButton.click();
-        await delay(1000);
-      }
-
-      // Look for note text area
-      const noteTextAreaSelectors = [
-        'textarea[name="message"]',
-        'textarea[aria-label^="Add a note"]',
-        ".send-invite__custom-message textarea",
-        'textarea[data-control-name="custom_message"]',
-        'textarea[placeholder*="note"]',
-      ];
-
-      for (const selector of noteTextAreaSelectors) {
-        try {
-          noteTextArea = await page.$(selector);
-          if (noteTextArea) break;
-        } catch (error) {
-          // Continue trying
-        }
-      }
-
-      if (!noteTextArea) {
-        console.log("No note text area found - sending without custom message");
-      }
-    } catch (error) {
-      console.log(
-        "Could not find note options - proceeding with default connection request"
-      );
-    }
-
-    // If we have a text area and a message, type the custom message
-    if (noteTextArea && message && message.trim().length > 0) {
-      console.log("✓ Found note text area - adding custom message");
-      await noteTextArea.click();
-      await delay(500);
-
-      // Type the custom message naturally
+      const messageInputSelector = "textarea#custom-message";
       await simulateNaturalTyping(
         page,
-        'textarea[name="message"], textarea[aria-label^="Add a note"], .send-invite__custom-message textarea, textarea[data-control-name="custom_message"], textarea[placeholder*="note"]',
-        message
+        messageInputSelector,
+        message || "Hi, I'd like to connect with you!"
       );
-      console.log("✓ Custom message typed");
-    }
 
-    // Wait before sending
-    await delay(1000 + Math.random() * 2000);
+      console.log("✓ Typed connection message naturally");
 
-    // Look for Send button
-    const sendButtonSelectors = [
-      'button[aria-label^="Send"]',
-      'button[data-control-name="send"]',
-      'button:has-text("Send")',
-      '.send-invite__actions button[type="submit"]',
-      'button[data-ember-action*="send"]',
-    ];
-
-    let sendButton = null;
-    for (const selector of sendButtonSelectors) {
-      try {
-        sendButton = await page.$(selector);
-        if (sendButton) break;
-      } catch (error) {
-        // Continue trying
-      }
-    }
-
-    if (!sendButton) {
-      throw new Error("Send button not found in connection modal");
-    }
-
-    // Check if send button is enabled
-    const isDisabled = await page.evaluate((btn) => btn.disabled, sendButton);
-    if (isDisabled) {
-      throw new Error("Send button is disabled");
-    }
-
-    // Click Send button
-    await sendButton.click();
-    console.log("✓ Clicked Send button");
-
-    // Wait for the modal to close and check for success
-    await delay(3000);
-
-    // Check if modal closed (indicating success) or if there's an error
-    const modalStillOpen = (await page.$(".send-invite")) !== null;
-
-    // Check for success indicators
-    const successIndicators = [
-      ".artdeco-toast-message--success",
-      ".artdeco-toast-item--success",
-      'div[data-test-artdeco-toast-message-type="success"]',
-    ];
-
-    let successFound = false;
-    for (const selector of successIndicators) {
-      try {
-        const successElement = await page.$(selector);
-        if (successElement) {
-          successFound = true;
-          break;
-        }
-      } catch (error) {
-        // Continue checking
-      }
-    }
-
-    // Check for error indicators
-    const errorIndicators = [
-      ".artdeco-toast-message--error",
-      ".artdeco-toast-item--error",
-      'div[data-test-artdeco-toast-message-type="error"]',
-      ".send-invite__error-message",
-    ];
-
-    let errorFound = false;
-    let errorMessage = "";
-    for (const selector of errorIndicators) {
-      try {
-        const errorElement = await page.$(selector);
-        if (errorElement) {
-          errorFound = true;
-          errorMessage = await page.evaluate(
-            (el) => el.textContent.trim(),
-            errorElement
-          );
-          break;
-        }
-      } catch (error) {
-        // Continue checking
-      }
-    }
-
-    if (errorFound) {
-      throw new Error(
-        `LinkedIn error: ${errorMessage || "Connection request failed"}`
+      const sendButton = await page.waitForSelector(
+        'button[aria-label="Send invitation"]',
+        { visible: true, timeout: 10000 }
       );
-    }
 
-    console.log(`✓ Connection request sent successfully to ${profileName}`);
+      if (sendButton) {
+        const isDisabled = await page.evaluate(
+          (btn) => btn.disabled,
+          sendButton
+        );
+        if (isDisabled) {
+          throw new Error("Send button is disabled - message may be empty");
+        }
+        await sendButton.click();
+        console.log("✓ Send button clicked");
+        await delay(2000); // Wait for request to process
+      }
+    } else {
+      // Try to send without note
+      const sendButton = await page.waitForSelector(
+        'button[aria-label="Send invitation"]',
+        { visible: true, timeout: 10000 }
+      );
+
+      if (sendButton) {
+        await sendButton.click();
+        console.log("✓ Send button clicked (without note)");
+        await delay(2000);
+      }
+    }
 
     return {
       success: true,
       profileUrl,
-      profileName,
-      message: message
-        ? message.substring(0, 100) + (message.length > 100 ? "..." : "")
-        : "No custom message",
       timestamp: new Date().toISOString(),
-      hasCustomMessage: !!(message && message.trim().length > 0),
     };
   } catch (error) {
     console.error("Error sending LinkedIn connection request:", error);
 
-    // Take screenshot for debugging
     if (page) {
       try {
         const timestamp = Date.now();
@@ -316,7 +173,27 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
   }
 }
 
-// Input validation middleware
+connectionQueue.process("send-connection", 1, async (job) => {
+  const { profileUrl, message, jobId } = job.data;
+
+  console.log(`Processing job ${jobId}: ${profileUrl}`);
+
+  const randomDelay = Math.random() * (120000 - 30000) + 30000;
+  console.log(
+    `Waiting ${Math.round(randomDelay / 1000)}s before processing...`
+  );
+  await delay(randomDelay);
+
+  try {
+    const result = await sendLinkedInConnectionRequest(profileUrl, message);
+    console.log(`Job ${jobId} completed successfully`);
+    return result;
+  } catch (error) {
+    console.error(`Job ${jobId} failed:`, error.message);
+    throw error;
+  }
+});
+
 function validateConnectRequest(req, res, next) {
   const { profileUrl, message } = req.body;
 
@@ -345,102 +222,233 @@ function validateConnectRequest(req, res, next) {
   next();
 }
 
-// API endpoint to send connection request
 app.post("/send-connect-request", validateConnectRequest, async (req, res) => {
-  const { profileUrl, message } = req.body;
+  const { profileUrl, message, priority = 0 } = req.body;
 
   try {
-    console.log(`Received connection request for profile: ${profileUrl}`);
+    console.log(`Adding connection request to queue: ${profileUrl}`);
 
-    const result = await sendLinkedInConnectionRequest(profileUrl, message);
+    const jobId = `connect_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+
+    const job = await connectionQueue.add(
+      "send-connection",
+      {
+        profileUrl,
+        message,
+        jobId,
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        priority,
+        jobId,
+      }
+    );
 
     res.json({
       success: true,
-      data: result,
-      message: "Connection request sent successfully",
+      jobId: job.id,
+      message: "Connection request added to queue",
+      profileUrl,
+      estimatedDelay: "30s - 2min",
+      queuePosition: await connectionQueue.getWaitingCount(),
     });
   } catch (error) {
     console.error("API Error:", error);
-
-    // Determine error type for appropriate status code
-    const isClientError =
-      error.message.includes("Already connected") ||
-      error.message.includes("already pending") ||
-      error.message.includes("not available for connection") ||
-      error.message.includes("only Follow option") ||
-      error.message.includes("not found") ||
-      error.message.includes("login");
-
-    const statusCode = isClientError ? 400 : 500;
-
-    res.status(statusCode).json({
+    res.status(500).json({
       success: false,
       error: error.message,
       profileUrl,
       timestamp: new Date().toISOString(),
-      retryable: !isClientError,
+    });
+  }
+});
+
+app.get("/job-status/:jobId", async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const job = await connectionQueue.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+        jobId,
+      });
+    }
+
+    const state = await job.getState();
+    const progress = job.progress();
+
+    res.json({
+      success: true,
+      jobId,
+      state,
+      progress,
+      data: job.data,
+      createdAt: new Date(job.timestamp).toISOString(),
+      processedAt: job.processedOn
+        ? new Date(job.processedOn).toISOString()
+        : null,
+      finishedAt: job.finishedOn
+        ? new Date(job.finishedOn).toISOString()
+        : null,
+      failedReason: job.failedReason,
+      returnValue: job.returnvalue,
+    });
+  } catch (error) {
+    console.error("Error getting job status:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      jobId,
+    });
+  }
+});
+
+app.get("/queue-stats", async (req, res) => {
+  try {
+    const waiting = await connectionQueue.getWaiting();
+    const active = await connectionQueue.getActive();
+    const completed = await connectionQueue.getCompleted();
+    const failed = await connectionQueue.getFailed();
+
+    res.json({
+      success: true,
+      stats: {
+        waiting: waiting.length,
+        active: active.length,
+        completed: completed.length,
+        failed: failed.length,
+        total:
+          waiting.length + active.length + completed.length + failed.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting queue stats:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Bulk add connections endpoint
+app.post("/bulk-connect-requests", async (req, res) => {
+  const { connections, defaultMessage } = req.body;
+
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "connections must be a non-empty array",
+    });
+  }
+
+  if (connections.length > 100) {
+    return res.status(400).json({
+      success: false,
+      error: "Maximum 100 connections per bulk request",
+    });
+  }
+
+  try {
+    const jobs = [];
+    const errors = [];
+
+    for (let i = 0; i < connections.length; i++) {
+      const { profileUrl, message } = connections[i];
+
+      // Validate each connection
+      if (!profileUrl || !profileUrl.includes("linkedin.com/in/")) {
+        errors.push(`Connection ${i}: Invalid profile URL`);
+        continue;
+      }
+
+      const jobId = `bulk_connect_${Date.now()}_${i}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+
+      try {
+        const job = await connectionQueue.add(
+          "send-connection",
+          {
+            profileUrl,
+            message: message || defaultMessage,
+            jobId,
+            requestedAt: new Date().toISOString(),
+            bulkRequest: true,
+          },
+          {
+            priority: -i, // Lower priority for later items
+            jobId,
+            delay: i * 30000, // Stagger by 30 seconds each
+          }
+        );
+
+        jobs.push({
+          jobId: job.id,
+          profileUrl,
+          position: i,
+        });
+      } catch (error) {
+        errors.push(`Connection ${i}: ${error.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${jobs.length} connection requests added to queue`,
+      jobs,
+      errors,
+      totalRequested: connections.length,
+      totalQueued: jobs.length,
+      estimatedDuration: `${Math.ceil(connections.length * 0.5)} - ${Math.ceil(
+        connections.length * 2
+      )} minutes`,
+    });
+  } catch (error) {
+    console.error("Bulk request error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 });
 
 // Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    service: "LinkedIn Connect Request Bot",
-  });
+app.get("/health", async (req, res) => {
+  try {
+    const queueHealth = await connectionQueue.isReady();
+
+    res.json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      service: "LinkedIn Connect Request Bot",
+      queue: queueHealth ? "connected" : "disconnected",
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "unhealthy",
+      timestamp: new Date().toISOString(),
+      service: "LinkedIn Connect Request Bot",
+      error: error.message,
+    });
+  }
 });
 
-// Retry endpoint for failed connection requests
-app.post("/retry-connect-request", validateConnectRequest, async (req, res) => {
-  const { profileUrl, message, maxRetries = 3 } = req.body;
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received, closing queue...");
+  await connectionQueue.close();
+  process.exit(0);
+});
 
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(
-        `Retry attempt ${attempt}/${maxRetries} for profile: ${profileUrl}`
-      );
-
-      const result = await sendLinkedInConnectionRequest(profileUrl, message);
-
-      return res.json({
-        success: true,
-        data: result,
-        message: `Connection request sent successfully on attempt ${attempt}`,
-        attempts: attempt,
-      });
-    } catch (error) {
-      lastError = error;
-      console.error(`Attempt ${attempt} failed:`, error.message);
-
-      // Don't retry if it's a client error (already connected, etc.)
-      if (
-        error.message.includes("Already connected") ||
-        error.message.includes("already pending") ||
-        error.message.includes("only Follow option")
-      ) {
-        break;
-      }
-
-      if (attempt < maxRetries) {
-        const waitTime = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-        console.log(`Waiting ${waitTime}ms before retry...`);
-        await delay(waitTime);
-      }
-    }
-  }
-
-  // All retries failed
-  res.status(500).json({
-    success: false,
-    error: `All ${maxRetries} retry attempts failed`,
-    lastError: lastError.message,
-    profileUrl,
-    timestamp: new Date().toISOString(),
-  });
+process.on("SIGINT", async () => {
+  console.log("SIGINT received, closing queue...");
+  await connectionQueue.close();
+  process.exit(0);
 });
 
 // Error handling middleware
@@ -462,6 +470,8 @@ app.listen(PORT, () => {
     `Send connect request: POST http://localhost:${PORT}/send-connect-request`
   );
   console.log(
-    `Retry connect request: POST http://localhost:${PORT}/retry-connect-request`
+    `Bulk connect requests: POST http://localhost:${PORT}/bulk-connect-requests`
   );
+  console.log(`Job status: GET http://localhost:${PORT}/job-status/:jobId`);
+  console.log(`Queue stats: GET http://localhost:${PORT}/queue-stats`);
 });
