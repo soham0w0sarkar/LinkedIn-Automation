@@ -10,7 +10,6 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// Create job queue
 const connectionQueue = new Bull("LinkedIn Connection Queue", {
   redis: {
     host: process.env.REDIS_HOST || "localhost",
@@ -62,11 +61,13 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
     console.log("✓ Profile page loaded");
 
     const followSpan = await page.$('span ::-p-text("Follow")');
+    let followButtonExists = false;
     if (followSpan) {
-      const moreButton = await page.$('button[aria-label="More actions"]');
+      followButtonExists = true;
+      const moreButtons = await page.$$('button[aria-label="More actions"]');
       console.log("✓ Follow button found, clicking More actions");
-      if (moreButton) {
-        await moreButton.click();
+      if (moreButtons.length > 0 && moreButtons[1]) {
+        await moreButtons[1].click();
         console.log("✓ More actions button clicked");
         await delay(30000);
       }
@@ -79,14 +80,24 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
       );
     }
 
-    const clicked = await page.evaluate((el) => {
-      const button = el.closest("button");
-      if (button) {
-        button.click();
-        return true;
-      }
-      return false;
-    }, connectSpan);
+    const clicked = followButtonExists
+      ? await page.evaluate((el) => {
+          const button = el.closest("div");
+
+          if (button) {
+            button.click();
+            return true;
+          }
+          return false;
+        }, connectSpan)
+      : await page.evaluate((el) => {
+          const button = el.closest("button");
+          if (button) {
+            button.click();
+            return true;
+          }
+          return false;
+        }, connectSpan);
 
     if (!clicked) {
       throw new Error("Failed to click Connect button");
@@ -335,7 +346,6 @@ app.get("/queue-stats", async (req, res) => {
   }
 });
 
-// Bulk add connections endpoint
 app.post("/bulk-connect-requests", async (req, res) => {
   const { connections, defaultMessage } = req.body;
 
@@ -360,7 +370,6 @@ app.post("/bulk-connect-requests", async (req, res) => {
     for (let i = 0; i < connections.length; i++) {
       const { profileUrl, message } = connections[i];
 
-      // Validate each connection
       if (!profileUrl || !profileUrl.includes("linkedin.com/in/")) {
         errors.push(`Connection ${i}: Invalid profile URL`);
         continue;
@@ -381,9 +390,9 @@ app.post("/bulk-connect-requests", async (req, res) => {
             bulkRequest: true,
           },
           {
-            priority: -i, // Lower priority for later items
+            priority: -i,
             jobId,
-            delay: i * 30000, // Stagger by 30 seconds each
+            delay: i * 30000,
           }
         );
 
@@ -417,7 +426,6 @@ app.post("/bulk-connect-requests", async (req, res) => {
   }
 });
 
-// Health check endpoint
 app.get("/health", async (req, res) => {
   try {
     const queueHealth = await connectionQueue.isReady();
@@ -438,7 +446,6 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Graceful shutdown
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, closing queue...");
   await connectionQueue.close();
@@ -451,7 +458,6 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-// Error handling middleware
 app.use((error, req, res, next) => {
   console.error("Unhandled error:", error);
   res.status(500).json({
@@ -461,7 +467,6 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`LinkedIn Connect Request Bot API running on port ${PORT}`);
