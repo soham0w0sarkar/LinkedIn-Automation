@@ -124,7 +124,6 @@ async function linkedInLoginAndSearch() {
       i++;
     }
 
-    // Wait for first profile link and then extract all links
     console.log("Waiting for profile links...");
     await page.waitForSelector('a[href*="/in/"]');
 
@@ -174,7 +173,6 @@ async function linkedInLoginAndSearch() {
   } catch (error) {
     console.error("Error:", error);
 
-    // Take error screenshot if possible
     if (page) {
       await page.screenshot({ path: "error_screenshot.png", fullPage: true });
       console.log("Error screenshot saved as error_screenshot.png");

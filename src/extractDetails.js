@@ -1,6 +1,5 @@
 import puppeteer from "puppeteer";
 import dotenv from "dotenv";
-import fs from "fs/promises";
 import { db } from "../firebase-config.js";
 import { handleLinkedInLogin } from "./cookie-utils.js";
 

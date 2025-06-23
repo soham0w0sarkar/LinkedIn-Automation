@@ -61,8 +61,15 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
     console.log("✓ Profile page loaded");
 
     const followSpan = await page.$('span ::-p-text("Follow")');
+    const followButton = await page.evaluate((el) => {
+      if (el) {
+        const button = el.closest("button");
+        return button !== null;
+      }
+      return null;
+    }, followSpan);
     let followButtonExists = false;
-    if (followSpan) {
+    if (followSpan && followButton) {
       followButtonExists = true;
       const moreButtons = await page.$$('button[aria-label="More actions"]');
       console.log("✓ Follow button found, clicking More actions");
@@ -139,10 +146,9 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
         }
         await sendButton.click();
         console.log("✓ Send button clicked");
-        await delay(2000); // Wait for request to process
+        await delay(2000);
       }
     } else {
-      // Try to send without note
       const sendButton = await page.waitForSelector(
         'button[aria-label="Send invitation"]',
         { visible: true, timeout: 10000 }

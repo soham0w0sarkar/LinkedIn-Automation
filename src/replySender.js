@@ -10,7 +10,6 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// Create job queue
 const replyQueue = new Bull("LinkedIn Reply Queue", {
   redis: {
     host: process.env.REDIS_HOST || "localhost",
@@ -146,7 +145,7 @@ replyQueue.process("send-reply", 1, async (job) => {
 
   console.log(`Processing reply job ${jobId}: thread ${threadId}`);
 
-  const randomDelay = Math.random() * (60000 - 10000) + 10000;
+  const randomDelay = Math.random() * 10000 + 15000;
   console.log(
     `Waiting ${Math.round(randomDelay / 1000)}s before processing...`
   );
