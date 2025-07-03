@@ -195,7 +195,7 @@ connectionQueue.process("send-connection", 1, async (job) => {
 
   console.log(`Processing job ${jobId}: ${profileUrl}`);
 
-  const randomDelay = Math.random() * (120000 - 30000) + 30000;
+  const randomDelay = Math.random() * 10000 + 15000;
   console.log(
     `Waiting ${Math.round(randomDelay / 1000)}s before processing...`
   );

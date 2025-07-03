@@ -22,7 +22,6 @@ async function humanLikeLinkedInBot() {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Use shared login logic
     const loginSuccess = await handleLinkedInLogin(
       page,
       process.env.LINKEDIN_EMAIL,
@@ -32,10 +31,8 @@ async function humanLikeLinkedInBot() {
       throw new Error("Login failed");
     }
 
-    // Random actions loop
     const actions = [
       async () => {
-        // Scroll feed
         console.log("Scrolling feed...");
         for (let i = 0; i < 5; i++) {
           await page.evaluate(() => window.scrollBy(0, 600));
