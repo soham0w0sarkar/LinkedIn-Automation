@@ -18,7 +18,6 @@ async function linkedInLoginAndSearch() {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Helper function for delays
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     // Check for saved cookies
@@ -76,18 +75,7 @@ async function linkedInLoginAndSearch() {
     }
 
     // Now search for a random company name
-    const companyNames = [
-      "Google",
-      "Microsoft",
-      "Amazon",
-      "Apple",
-      "Meta",
-      "IBM",
-      "Oracle",
-      "Salesforce",
-      "Adobe",
-      "Intel",
-    ];
+    const companyNames = ["indie builders"];
     const randomCompany =
       companyNames[Math.floor(Math.random() * companyNames.length)];
     console.log(`Searching for company '${randomCompany}'...`);
@@ -101,7 +89,6 @@ async function linkedInLoginAndSearch() {
     // Wait for search results to load and click on People button
     console.log("Waiting for People button...");
 
-    // Check buttons using nth-child until no more buttons found
     await page.waitForSelector(
       `#search-reusables__filters-bar > ul > li:nth-child(1) > button`
     );
@@ -154,12 +141,8 @@ async function linkedInLoginAndSearch() {
         .doc(`${process.env.LINKEDIN_EMAIL}_${process.env.LINKEDIN_PASS}`)
         .set({
           company: randomCompany,
-          profileCount: 3,
-          profiles: links
-            .filter((_, i) => i < 3)
-            .map((link) => {
-              return { link };
-            }),
+          profileCount: 10,
+          profiles: links,
           date: Timestamp.now(),
         });
     }

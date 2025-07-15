@@ -112,53 +112,15 @@ async function sendLinkedInConnectionRequest(profileUrl, message) {
 
     await delay(2000);
 
-    const addNoteButton = await page.waitForSelector(
-      'button[aria-label="Add a note"]',
+    const sendButton = await page.waitForSelector(
+      'button[aria-label="Send without a note"]',
       { timeout: 10000, visible: true }
     );
 
-    if (addNoteButton) {
-      await addNoteButton.click();
-      console.log("✓ Add note button clicked");
-      await delay(1000);
-
-      const messageInputSelector = "textarea#custom-message";
-      await simulateNaturalTyping(
-        page,
-        messageInputSelector,
-        message || "Hi, I'd like to connect with you!"
-      );
-
-      console.log("✓ Typed connection message naturally");
-
-      const sendButton = await page.waitForSelector(
-        'button[aria-label="Send invitation"]',
-        { visible: true, timeout: 10000 }
-      );
-
-      if (sendButton) {
-        const isDisabled = await page.evaluate(
-          (btn) => btn.disabled,
-          sendButton
-        );
-        if (isDisabled) {
-          throw new Error("Send button is disabled - message may be empty");
-        }
-        await sendButton.click();
-        console.log("✓ Send button clicked");
-        await delay(2000);
-      }
-    } else {
-      const sendButton = await page.waitForSelector(
-        'button[aria-label="Send invitation"]',
-        { visible: true, timeout: 10000 }
-      );
-
-      if (sendButton) {
-        await sendButton.click();
-        console.log("✓ Send button clicked (without note)");
-        await delay(2000);
-      }
+    if (sendButton) {
+      await sendButton.click();
+      console.log("✓ Send button clicked (without note)");
+      await delay(2000);
     }
 
     return {

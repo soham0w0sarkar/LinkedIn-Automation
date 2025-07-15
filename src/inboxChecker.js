@@ -2,6 +2,7 @@ import puppeteer from "puppeteer";
 import dotenv from "dotenv";
 import { db, Timestamp } from "../firebase-config.js";
 import { handleLinkedInLogin } from "./cookie-utils.js";
+import { startPageRecording } from "./screenRecord-util.js";
 
 dotenv.config();
 
@@ -243,7 +244,7 @@ async function checkForNewMessages(page, messageThreads, botId) {
 }
 
 async function activeInboxMonitor(page, messageThreads, botId) {
-  const MONITOR_DURATION = 5 * 60 * 1000;
+  const MONITOR_DURATION = 1 * 60 * 1000;
   const CHECK_INTERVAL = 10 * 1000;
 
   let endTime = Date.now() + MONITOR_DURATION;
@@ -276,12 +277,18 @@ async function processLinkedin() {
   });
 
   let page;
+  let recorder;
 
   try {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    recorder = await startPageRecording(page, "./linkedin_session.mp4", {
+      fps: 25,
+      videoFrame: { width: 854, height: 480 },
+    });
+
+    const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
     const { botId, threads } = await preprocessing(browser, page);
 
@@ -339,7 +346,9 @@ async function processLinkedin() {
 
               if (content) {
                 let timestampText = await message
-                  .$eval(".msg-s-message-group__timestamp", (el) => el.innerText.trim())
+                  .$eval(".msg-s-message-group__timestamp", (el) =>
+                    el.innerText.trim()
+                  )
                   .catch(() => null);
 
                 let timestamp;
@@ -393,16 +402,18 @@ async function processLinkedin() {
 
     await activeInboxMonitor(page, messageThreads, botId);
   } catch (error) {
-    console.error("Error in processLinkedin:", error);
+    console.error("❌ Error in processLinkedin:", error);
     if (page)
       await page.screenshot({ path: "error_screenshot.png", fullPage: true });
   } finally {
+    if (recorder) {
+      await recorder.stop();
+      console.log("🟢 Recording stopped and saved");
+    }
+
     await browser.close();
-    console.log("Browser closed");
+    console.log("🧹 Browser closed");
   }
 }
 
-
-processLinkedin().then(() =>
-  console.log("✅ LinkedIn message processing completed")
-);
+processLinkedin();
