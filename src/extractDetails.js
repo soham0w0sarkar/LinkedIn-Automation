@@ -2,13 +2,14 @@ import puppeteer from "puppeteer";
 import dotenv from "dotenv";
 import { db } from "../firebase-config.js";
 import { handleLinkedInLogin } from "./cookie-utils.js";
+import { startPageRecording } from "./screenRecord-util.js";
 
 dotenv.config();
 
 async function extractProfileDetails() {
   console.log("Starting profile details extraction...");
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -30,6 +31,16 @@ async function extractProfileDetails() {
     await page.setViewport({ width: 1280, height: 800 });
 
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Start recording the page
+    const outputPath = `./recordings/extractor_${Date.now()}.mp4`;
+    const recorder = await startPageRecording(page, outputPath, {
+      fps: 25,
+      videoFrame: {
+        width: 1280,
+        height: 800,
+      },
+    });
 
     const loginSuccess = await handleLinkedInLogin(
       page,
@@ -145,10 +156,17 @@ async function extractProfileDetails() {
         profileDetails.filter((p) => p.name).length
       }/${profiles.length} profiles`
     );
+
+    // Stop recording and save the video
+    if (recorder) {
+      await recorder.stop();
+      console.log(`Recording saved to ${outputPath}`);
+    }
   } catch (error) {
     console.error("Error:", error);
 
     // Take error screenshot if possible
+
     if (page) {
       await page.screenshot({
         path: "extraction_error_screenshot.png",

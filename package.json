@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "bull": "^4.16.5",
+    "csv-parse": "^6.1.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",

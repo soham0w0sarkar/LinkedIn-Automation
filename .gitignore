@@ -6,3 +6,7 @@ linkedin_profiles_food_industry_procurement_ corn oil with emails.csv
 node_modules
 package-lock.json
 .DS_Store
+recordings
+recordings/*
+test.*
+*.csv

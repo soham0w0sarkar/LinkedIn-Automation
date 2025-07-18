@@ -270,9 +270,9 @@ async function activeInboxMonitor(page, messageThreads, botId) {
   console.log("✅ Active monitoring period completed");
 }
 
-async function processLinkedin() {
+export default async function processLinkedin() {
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -283,10 +283,14 @@ async function processLinkedin() {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    recorder = await startPageRecording(page, "./linkedin_session.mp4", {
-      fps: 25,
-      videoFrame: { width: 854, height: 480 },
-    });
+    recorder = await startPageRecording(
+      page,
+      `./recordings/inboxchecker_${Date.now()}.mp4`,
+      {
+        fps: 25,
+        videoFrame: { width: 854, height: 480 },
+      }
+    );
 
     const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -415,5 +419,3 @@ async function processLinkedin() {
     console.log("🧹 Browser closed");
   }
 }
-
-processLinkedin();
