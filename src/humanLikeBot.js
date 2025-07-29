@@ -12,7 +12,7 @@ async function randomDelay(min = 1000, max = 4000) {
 async function humanLikeLinkedInBot() {
   console.log("Starting human-like LinkedIn bot...");
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 

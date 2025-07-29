@@ -8,7 +8,7 @@ dotenv.config();
 async function linkedInLoginAndSearch() {
   console.log("Starting LinkedIn automation...");
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 

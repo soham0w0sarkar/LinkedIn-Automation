@@ -88,15 +88,29 @@ export async function handleLinkedInLogin(
       await page.setCookie(...cookieValidation.cookies);
       console.log("✅ Loaded valid cookies from file");
 
-      await page.goto("https://www.linkedin.com/feed/");
-      await delay(5000);
+      let feedLoaded = false;
+      try {
+        await page.goto("https://www.linkedin.com/feed/", { timeout: 30000 });
+        feedLoaded = true;
+      } catch (err) {
+        console.warn("⚠️ First navigation attempt timed out. Retrying...");
+        try {
+          await page.goto("https://www.linkedin.com/feed/", { timeout: 60000 });
+          feedLoaded = true;
+        } catch (retryErr) {
+          console.error("❌ Retry navigation failed:", retryErr.message);
+        }
+      }
 
-      const searchBar = await page.$('[aria-label="Search"]');
-      if (searchBar) {
-        console.log("✅ Successfully authenticated using cookies");
-        return true;
-      } else {
-        console.log("❌ Cookies failed server-side validation");
+      if (feedLoaded) {
+        await delay(5000);
+        const searchBar = await page.$('[aria-label="Search"]');
+        if (searchBar) {
+          console.log("✅ Successfully authenticated using cookies");
+          return true;
+        } else {
+          console.log("❌ Cookies failed server-side validation");
+        }
       }
     } catch (error) {
       console.log("❌ Error using cookies:", error.message);

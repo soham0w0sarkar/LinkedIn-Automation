@@ -32,7 +32,7 @@ async function sendLinkedInConnectionRequest(profileUrl) {
   console.log(`Starting connection request to: ${profileUrl}`);
 
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 

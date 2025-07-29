@@ -9,7 +9,7 @@ dotenv.config();
 async function extractProfileDetails() {
   console.log("Starting profile details extraction...");
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 

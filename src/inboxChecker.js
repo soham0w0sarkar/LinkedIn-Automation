@@ -59,10 +59,13 @@ async function preprocessing(browser, page) {
 
       const threadUrl = page.url();
       const Id = threadUrl.match(/messaging\/thread\/([^/]+)/)?.[1] || "N/A";
-      const name = await page.$("h2#thread-detail-jump-target");
+      const name = await messageLi.$(
+        "h3.msg-conversation-listitem__participant-names"
+      );
       let threadName;
       if (name) {
         threadName = await page.evaluate((el) => el.innerText, name);
+        console.log(`Thread name: ${threadName}`);
       }
       console.log(`Thread ${i} ID: ${Id}, and name: ${threadName}`);
       threads.push({ Id, name: threadName || "" });
@@ -161,7 +164,7 @@ async function checkForNewMessages(page, messageThreads, botId) {
       console.log(`Checking thread: ${thread.name}`);
 
       const threadUrl = `https://www.linkedin.com/messaging/thread/${thread.threadId}/`;
-      await page.goto(threadUrl);
+      await page.goto(threadUrl, { waitUntil: "networkidle2" });
       await delay(3000);
 
       await page.waitForSelector(".msg-s-message-list", { timeout: 10000 });
@@ -203,6 +206,13 @@ async function checkForNewMessages(page, messageThreads, botId) {
                 timestamp = new Date().toISOString();
               }
 
+              console.log(`Message found: ${messageContent} at ${timestamp}`);
+
+              console.log(thread.lastChecked);
+              console.log(new Date(thread.lastChecked));
+              console.log(new Date(timestamp));
+              console.log(new Date(timestamp) > thread.lastChecked);
+
               messages.push({
                 content: messageContent,
                 timestamp: timestamp,
@@ -225,11 +235,11 @@ async function checkForNewMessages(page, messageThreads, botId) {
         );
         newMessagesFound = true;
 
-        await db.collection("MessageThreads").doc(thread.docId).update({
-          lastMessages,
-          lastChecked: Timestamp.now(),
-          process: true,
-        });
+        // await db.collection("MessageThreads").doc(thread.docId).update({
+        //   lastMessages,
+        //   lastChecked: Timestamp.now(),
+        //   process: true,
+        // });
 
         thread.lastChecked = new Date();
       }
@@ -244,7 +254,7 @@ async function checkForNewMessages(page, messageThreads, botId) {
 }
 
 async function activeInboxMonitor(page, messageThreads, botId) {
-  const MONITOR_DURATION = 1 * 60 * 1000;
+  const MONITOR_DURATION = 60 * 60 * 1000;
   const CHECK_INTERVAL = 10 * 1000;
 
   let endTime = Date.now() + MONITOR_DURATION;
@@ -272,7 +282,7 @@ async function activeInboxMonitor(page, messageThreads, botId) {
 
 export default async function processLinkedin() {
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -329,8 +339,8 @@ export default async function processLinkedin() {
       try {
         console.log(`Checking thread: ${thread.name}`);
         const threadUrl = `https://www.linkedin.com/messaging/thread/${thread.threadId}/`;
-        await page.goto(threadUrl);
-        await delay(3000);
+        await page.goto(threadUrl, { waitUntil: "networkidle2" });
+        await delay(30000);
         await page.waitForSelector(".msg-s-message-list", { timeout: 10000 });
         await delay(2000);
 
@@ -382,21 +392,19 @@ export default async function processLinkedin() {
           (msg) => new Date(msg.timestamp) > thread.lastChecked
         );
 
-        console.log(lastMessages);
+        // if (lastMessages.length > 0) {
+        //   await db.collection("MessageThreads").doc(thread.docId).update({
+        //     lastMessages,
+        //     lastChecked: Timestamp.now(),
+        //     process: true,
+        //   });
 
-        if (lastMessages.length > 0) {
-          await db.collection("MessageThreads").doc(thread.docId).update({
-            lastMessages,
-            lastChecked: Timestamp.now(),
-            process: true,
-          });
-
-          thread.lastMessages = [
-            ...(thread.lastMessages || []),
-            ...lastMessages,
-          ];
-          thread.lastChecked = new Date();
-        }
+        //   thread.lastMessages = [
+        //     ...(thread.lastMessages || []),
+        //     ...lastMessages,
+        //   ];
+        //   thread.lastChecked = new Date();
+        // }
 
         await delay(2000);
       } catch (error) {
@@ -419,3 +427,5 @@ export default async function processLinkedin() {
     console.log("🧹 Browser closed");
   }
 }
+
+processLinkedin();

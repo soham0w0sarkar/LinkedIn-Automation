@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { db } from "../firebase-config.js";
 import { handleLinkedInLogin } from "./cookie-utils.js";
 import { startPageRecording } from "./screenRecord-util.js";
+import simulateNaturalTyping from "./typing-util.js";
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ export async function checkConnectionStatus(profile) {
   }
 
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
@@ -82,7 +83,46 @@ export async function checkConnectionStatus(profile) {
     await delay(10000);
 
     const isPending = await page.$('span ::-p-text("Pending")');
-    const canMessage = await page.$('span ::-p-text("Message")');
+    const message = await page.$$("span.artdeco-button__text");
+
+    let canMessage = [];
+
+    for (const el of message) {
+      const text = await el.evaluate((node) => node.textContent.trim());
+      if (text === "Message") {
+        console.log(el);
+        canMessage.push(el);
+      }
+    }
+
+    if (!isPending && canMessage[1]) {
+      console.log(`✓ Connected: ${profileUrl}`);
+
+      await canMessage[1].click();
+
+      await page.waitForSelector('div[role="textbox"]', { timeout: 5000 });
+
+      await simulateNaturalTyping(
+        page,
+        'div[role="textbox"]',
+        profile.generatedMessage
+      );
+
+      const button = await page.$('button[type="submit"]');
+
+      if (button) {
+        await button.click();
+        console.log("✅ Message sent successfully");
+      }
+
+      return {
+        profileUrl,
+        connectionStatus: "connected",
+        isPending: false,
+        messageSent: true,
+        recordingPath: outputPath,
+      };
+    }
 
     if (isPending) {
       console.log(`⏳ Pending: ${profileUrl}`);
@@ -91,17 +131,6 @@ export async function checkConnectionStatus(profile) {
         connectionStatus: "pending",
         isPending: true,
         messageSent: false,
-        recordingPath: outputPath,
-      };
-    }
-
-    if (canMessage) {
-      console.log(`✓ Connected: ${profileUrl}`);
-      return {
-        profileUrl,
-        connectionStatus: "connected",
-        isPending: false,
-        messageSent: true,
         recordingPath: outputPath,
       };
     }

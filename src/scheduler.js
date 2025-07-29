@@ -4,28 +4,41 @@ import processLinkedin from "./inboxChecker.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-nodeCron.schedule("*/27 * * * *", async () => {
-  const jitterMinutes = Math.floor(Math.random() * 9); // 0–8
-  console.log(`🕒 Delaying connection check by ${jitterMinutes} minutes...`);
-  await delay(jitterMinutes * 60 * 1000);
+// Lock variables
+let isConnectionCheckerRunning = false;
+let isInboxProcessingRunning = false;
 
-  console.log("🔄 Running scheduled connection check...");
-  try {
-    await runConnectionChecker();
-  } catch (error) {
-    console.error("❌ Error during scheduled connection check:", error);
+// nodeCron.schedule("*/1 * * * *", async () => {
+//   if (isConnectionCheckerRunning) {
+//     console.log("⏳ Connection check already running. Skipping this schedule.");
+//     return;
+//   }
+
+//   isConnectionCheckerRunning = true;
+//   console.log("🔄 Running scheduled connection check...");
+//   try {
+//     await runConnectionChecker();
+//   } catch (error) {
+//     console.error("❌ Error during scheduled connection check:", error);
+//   } finally {
+//     isConnectionCheckerRunning = false;
+//   }
+// });
+
+// --- Inbox Processor Job ---
+nodeCron.schedule("0 */1 * * *", async () => {
+  if (isInboxProcessingRunning) {
+    console.log("⏳ Inbox processing already running. Skipping this schedule.");
+    return;
   }
-});
 
-nodeCron.schedule("*/52 * * * *", async () => {
-  const jitterMinutes = Math.floor(Math.random() * 13); // 0–12
-  console.log(`🕒 Delaying inbox processing by ${jitterMinutes} minutes...`);
-  await delay(jitterMinutes * 60 * 1000);
-
+  isInboxProcessingRunning = true;
   console.log("🔄 Running scheduled inbox processing...");
   try {
     await processLinkedin();
   } catch (error) {
     console.error("❌ Error during scheduled inbox processing:", error);
+  } finally {
+    isInboxProcessingRunning = false;
   }
 });
