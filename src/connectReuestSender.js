@@ -3,12 +3,12 @@ import puppeteer from "puppeteer";
 import dotenv from "dotenv";
 import Bull from "bull";
 import { handleLinkedInLogin } from "./cookie-utils.js";
-import { startPageRecording } from "./screenRecord-util.js"; // Add this file
+import { startPageRecording } from "./screenRecord-util.js";
 
 dotenv.config();
 
-const app = express();
-app.use(express.json());
+const connectRouter = express.Router();
+connectRouter.use(express.json());
 
 const connectionQueue = new Bull("LinkedIn Connection Queue", {
   redis: {
@@ -193,43 +193,47 @@ function validateConnectRequest(req, res, next) {
   next();
 }
 
-app.post("/send-connect-request", validateConnectRequest, async (req, res) => {
-  const { profileUrl, priority = 0 } = req.body;
+connectRouter.post(
+  "/send-connect-request",
+  validateConnectRequest,
+  async (req, res) => {
+    const { profileUrl, priority = 0 } = req.body;
 
-  try {
-    const jobId = `connect_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    const job = await connectionQueue.add(
-      "send-connection",
-      {
+    try {
+      const jobId = `connect_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      const job = await connectionQueue.add(
+        "send-connection",
+        {
+          profileUrl,
+          jobId,
+          requestedAt: new Date().toISOString(),
+        },
+        {
+          priority,
+          jobId,
+        }
+      );
+
+      res.json({
+        success: true,
+        jobId: job.id,
         profileUrl,
-        jobId,
-        requestedAt: new Date().toISOString(),
-      },
-      {
-        priority,
-        jobId,
-      }
-    );
-
-    res.json({
-      success: true,
-      jobId: job.id,
-      profileUrl,
-      message: "Connection job queued",
-      queuePosition: await connectionQueue.getWaitingCount(),
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      profileUrl,
-    });
+        message: "Connection job queued",
+        queuePosition: await connectionQueue.getWaitingCount(),
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        profileUrl,
+      });
+    }
   }
-});
+);
 
-app.post("/send-bulk-connect-requests", async (req, res) => {
+connectRouter.post("/send-bulk-connect-requests", async (req, res) => {
   const { connections = [], priority = 0 } = req.body;
 
   if (!Array.isArray(connections) || connections.length === 0) {
@@ -287,77 +291,6 @@ app.post("/send-bulk-connect-requests", async (req, res) => {
   });
 });
 
-app.get("/job-status/:jobId", async (req, res) => {
-  const { jobId } = req.params;
-
-  try {
-    const job = await connectionQueue.getJob(jobId);
-    if (!job)
-      return res.status(404).json({ success: false, error: "Job not found" });
-
-    const state = await job.getState();
-    res.json({
-      success: true,
-      jobId,
-      state,
-      data: job.data,
-      createdAt: new Date(job.timestamp).toISOString(),
-      processedAt: job.processedOn
-        ? new Date(job.processedOn).toISOString()
-        : null,
-      finishedAt: job.finishedOn
-        ? new Date(job.finishedOn).toISOString()
-        : null,
-      failedReason: job.failedReason,
-      returnValue: job.returnvalue,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get("/queue-stats", async (req, res) => {
-  try {
-    const [waiting, active, completed, failed] = await Promise.all([
-      connectionQueue.getWaiting(),
-      connectionQueue.getActive(),
-      connectionQueue.getCompleted(),
-      connectionQueue.getFailed(),
-    ]);
-
-    res.json({
-      success: true,
-      stats: {
-        waiting: waiting.length,
-        active: active.length,
-        completed: completed.length,
-        failed: failed.length,
-        total:
-          waiting.length + active.length + completed.length + failed.length,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.get("/health", async (req, res) => {
-  try {
-    const queueHealth = await connectionQueue.isReady();
-    res.json({
-      status: "healthy",
-      service: "LinkedIn Connect Request Bot",
-      queue: queueHealth ? "connected" : "disconnected",
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: "unhealthy",
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
 
 process.on("SIGTERM", async () => {
   console.log("SIGTERM received, closing queue...");
@@ -371,7 +304,4 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 LinkedIn Connect Request Bot running on port ${PORT}`);
-});
+export default connectRouter;

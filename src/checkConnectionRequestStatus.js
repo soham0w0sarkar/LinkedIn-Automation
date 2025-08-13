@@ -9,25 +9,31 @@ dotenv.config();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const campaignId = process.env.CAMPAIGN_ID;
+const botId = `${process.env.LINKEDIN_EMAIL}_${process.env.LINKEDIN_PASS}`;
+
 async function getProfilesFromFirebase() {
   try {
-    const docId = `${process.env.LINKEDIN_EMAIL}_${process.env.LINKEDIN_PASS}`;
-    const docRef = db.collection("ProfileSearches").doc(docId);
-    const docSnap = await docRef.get();
+    const botRef = db
+      .collection("Campaigns")
+      .doc(campaignId)
+      .collection("bot_accounts")
+      .doc(botId);
 
-    if (!docSnap.exists) {
-      console.log(`Document ${docId} not found`);
+    const botSnap = await botRef.get();
+    if (!botSnap.exists) {
+      console.log(`Bot document ${botId} not found in Campaign ${campaignId}`);
       return [];
     }
 
-    const docData = docSnap.data();
-    if (!docData.profiles || !Array.isArray(docData.profiles)) {
-      console.log("No profiles array in document");
+    const botData = botSnap.data();
+    if (!botData.profiles || !Array.isArray(botData.profiles)) {
+      console.log("No profiles array in bot document");
       return [];
     }
 
-    console.log(`Fetched ${docData.profiles.length} profiles`);
-    return docData.profiles;
+    console.log(`Fetched ${botData.profiles.length} profiles`);
+    return botData.profiles;
   } catch (error) {
     console.error("Error fetching profiles:", error);
     return [];
@@ -60,15 +66,12 @@ export async function checkConnectionStatus(profile) {
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    const outputPath = `./recordings/connection_check_${Date.now()}.mp4`;
+    const outputPath = `./recordings/connection_check_${campaignId}_${botId}_${Date.now()}.mp4`;
 
     recorder = await startPageRecording(page, outputPath, {
       followNewTab: true,
       fps: 25,
-      videoFrame: {
-        width: 1280,
-        height: 800,
-      },
+      videoFrame: { width: 1280, height: 800 },
     });
 
     const loginSuccess = await handleLinkedInLogin(
@@ -90,7 +93,6 @@ export async function checkConnectionStatus(profile) {
     for (const el of message) {
       const text = await el.evaluate((node) => node.textContent.trim());
       if (text === "Message") {
-        console.log(el);
         canMessage.push(el);
       }
     }
@@ -99,7 +101,6 @@ export async function checkConnectionStatus(profile) {
       console.log(`✓ Connected: ${profileUrl}`);
 
       await canMessage[1].click();
-
       await page.waitForSelector('div[role="textbox"]', { timeout: 5000 });
 
       await simulateNaturalTyping(
@@ -109,7 +110,6 @@ export async function checkConnectionStatus(profile) {
       );
 
       const button = await page.$('button[type="submit"]');
-
       if (button) {
         await button.click();
         console.log("✅ Message sent successfully");
@@ -174,7 +174,6 @@ export async function checkConnectionStatus(profile) {
         console.error("Failed to stop recorder:", err);
       }
     }
-
     if (browser) await browser.close();
   }
 }
@@ -225,35 +224,33 @@ export async function checkMultipleConnections(profiles) {
 
 async function updateFirebaseWithResults(results) {
   try {
-    const docId = `${process.env.LINKEDIN_EMAIL}_${process.env.LINKEDIN_PASS}`;
-    const docRef = db.collection("ProfileSearches").doc(docId);
+    const botRef = db
+      .collection("Campaigns")
+      .doc(campaignId)
+      .collection("bot_accounts")
+      .doc(botId);
 
-    const docSnap = await docRef.get();
-    if (!docSnap.exists) {
-      console.log("Document not found for update");
+    const botSnap = await botRef.get();
+    if (!botSnap.exists) {
+      console.log("Bot document not found for update");
       return;
     }
 
-    const docData = docSnap.data();
+    const botData = botSnap.data();
     const resultMap = {};
     results.results.forEach((r) => {
-      resultMap[r.profileUrl] = {
-        messageSent: r.messageSent || false,
-      };
+      resultMap[r.profileUrl] = { messageSent: r.messageSent || false };
     });
 
-    const updatedProfiles = docData.profiles.map((profile) => {
+    const updatedProfiles = botData.profiles.map((profile) => {
       const result = resultMap[profile.link];
       if (result) {
-        return {
-          ...profile,
-          messageSent: result.messageSent,
-        };
+        return { ...profile, messageSent: result.messageSent };
       }
       return profile;
     });
 
-    await docRef.update({ profiles: updatedProfiles });
+    await botRef.update({ profiles: updatedProfiles });
     console.log("✓ Firebase updated with messageSent status.");
   } catch (error) {
     console.error("Error updating Firebase:", error);
@@ -261,7 +258,7 @@ async function updateFirebaseWithResults(results) {
 }
 
 export async function startConnectionCheck() {
-  console.log("Starting simplified LinkedIn connection check...");
+  console.log(`[${campaignId}/${botId}] Starting LinkedIn connection check...`);
 
   try {
     const profiles = await getProfilesFromFirebase();

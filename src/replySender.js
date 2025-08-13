@@ -10,8 +10,8 @@ import { startPageRecording } from "./screenRecord-util.js";
 
 dotenv.config();
 
-const app = express();
-app.use(express.json());
+const replyRouter = express.Router();
+replyRouter.use(express.json());
 
 const redisOptions = {
   redis: {
@@ -137,7 +137,7 @@ replyQueue.process(async (job) => {
   return await sendLinkedInReply(threadId, message);
 });
 
-app.post("/send-reply", async (req, res) => {
+replyRouter.post("/send-reply", async (req, res) => {
   const { threadId, message } = req.body;
   if (!threadId || !message) {
     return res.status(400).json({ error: "Missing threadId or message" });
@@ -147,7 +147,7 @@ app.post("/send-reply", async (req, res) => {
   res.json({ jobId: job.id });
 });
 
-app.get("/job-status/:jobId", async (req, res) => {
+replyRouter.get("/job-status/:jobId", async (req, res) => {
   const job = await replyQueue.getJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: "Job not found" });
 
@@ -156,6 +156,6 @@ app.get("/job-status/:jobId", async (req, res) => {
   res.json({ state, result });
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("🚀 Server listening on port", process.env.PORT || 3000);
-});
+// No app.listen here; router will be mounted in apiEndpoints.js
+
+export default replyRouter;
