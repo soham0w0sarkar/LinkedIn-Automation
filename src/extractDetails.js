@@ -180,12 +180,11 @@ async function extractProfileDetails() {
 }
 
 extractQueue.process("extract-profiles", 1, async (job) => {
-  const { campaignId, botId } = job.data;
-  console.log(`Processing extraction for ${campaignId}/${botId}`);
+  console.log(`Processing extraction for ${process.env.CAMPAIGN_ID}}`);
 
   try {
     await extractProfileDetails();
-    console.log(`Extraction for ${campaignId}/${botId} completed`);
+    console.log(`Extraction for ${process.env.CAMPAIGN_ID} completed`);
     return { success: true };
   } catch (error) {
     console.error(`Error processing ${campaignId}/${botId}:`, error);
@@ -193,15 +192,25 @@ extractQueue.process("extract-profiles", 1, async (job) => {
   }
 });
 
-// Example endpoint to trigger extraction (customize as needed)
-extractRouter.post("/extract-profiles", async (req, res) => {
-  const { campaignId, botId } = req.body;
+extractRouter.get("/extract-profiles", async (req, res) => {
   try {
-    await extractQueue.add("extract-profiles", { campaignId, botId });
+    await extractQueue.add("extract-profiles");
     res.json({ success: true, message: "Extraction job queued" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received, closing queue...");
+  await extractQueue.close();
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  console.log("SIGINT received, closing queue...");
+  await extractQueue.close();
+  process.exit(0);
 });
 
 export default extractRouter;

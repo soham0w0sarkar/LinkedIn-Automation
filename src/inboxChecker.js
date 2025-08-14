@@ -125,10 +125,23 @@ async function preprocessing(browser, page) {
           matchedProfileId = matchedProfile.link;
           console.log(`Matched thread to profile: ${matchedProfileId}`);
 
+          const campaignRef = await db
+            .collection("Campaigns")
+            .doc(process.env.CAMPAIGN_ID)
+            .get();
+          if (!campaignRef.exists) {
+            console.error(`Campaign ${process.env.CAMPAIGN_ID} not found`);
+            continue;
+          }
+
+          const campaignData = campaignRef.data();
+
           await db
             .collection("MessageThreads")
             .doc(`${botId}_${thread.Id}`)
             .set({
+              conversationPrompt: campaignData.conversationPrompt || "",
+              campaignId: process.env.CAMPAIGN_ID,
               name: thread.name,
               Id: thread.Id,
               matchedProfileId,
@@ -235,11 +248,11 @@ async function checkForNewMessages(page, messageThreads, botId) {
         );
         newMessagesFound = true;
 
-        // await db.collection("MessageThreads").doc(thread.docId).update({
-        //   lastMessages,
-        //   lastChecked: Timestamp.now(),
-        //   process: true,
-        // });
+        await db.collection("MessageThreads").doc(thread.docId).update({
+          lastMessages,
+          lastChecked: Timestamp.now(),
+          process: true,
+        });
 
         thread.lastChecked = new Date();
       }
@@ -392,19 +405,19 @@ export default async function processLinkedin() {
           (msg) => new Date(msg.timestamp) > thread.lastChecked
         );
 
-        // if (lastMessages.length > 0) {
-        //   await db.collection("MessageThreads").doc(thread.docId).update({
-        //     lastMessages,
-        //     lastChecked: Timestamp.now(),
-        //     process: true,
-        //   });
+        if (lastMessages.length > 0) {
+          await db.collection("MessageThreads").doc(thread.docId).update({
+            lastMessages,
+            lastChecked: Timestamp.now(),
+            process: true,
+          });
 
-        //   thread.lastMessages = [
-        //     ...(thread.lastMessages || []),
-        //     ...lastMessages,
-        //   ];
-        //   thread.lastChecked = new Date();
-        // }
+          thread.lastMessages = [
+            ...(thread.lastMessages || []),
+            ...lastMessages,
+          ];
+          thread.lastChecked = new Date();
+        }
 
         await delay(2000);
       } catch (error) {

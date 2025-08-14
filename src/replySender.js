@@ -147,15 +147,16 @@ replyRouter.post("/send-reply", async (req, res) => {
   res.json({ jobId: job.id });
 });
 
-replyRouter.get("/job-status/:jobId", async (req, res) => {
-  const job = await replyQueue.getJob(req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  const state = await job.getState();
-  const result = job.returnvalue;
-  res.json({ state, result });
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received, closing queue...");
+  await replyQueue.close();
+  process.exit(0);
 });
 
-// No app.listen here; router will be mounted in apiEndpoints.js
+process.on("SIGINT", async () => {
+  console.log("SIGINT received, closing queue...");
+  await replyQueue.close();
+  process.exit(0);
+});
 
 export default replyRouter;
